@@ -101,9 +101,9 @@ class SDXLParser:
         result.positive_prompt = _get_prompt_text(nodes, ksampler_id, "positive")
         result.negative_prompt = _get_prompt_text(nodes, ksampler_id, "negative")
 
-        # Treat empty negative prompt as None
+        # Mark empty negative prompt explicitly
         if result.negative_prompt is not None and result.negative_prompt.strip() == "":
-            result.negative_prompt = None
+            result.negative_prompt = "(empty)"
 
         # Find model
         checkpoints = _find_nodes_by_type(nodes, "CheckpointLoaderSimple")

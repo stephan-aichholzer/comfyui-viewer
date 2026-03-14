@@ -80,9 +80,8 @@ body {
   position: absolute; bottom: 0; left: 0; right: 0;
   background: rgba(0,0,0,0.7); padding: 4px 6px;
   font-size: 11px; white-space: nowrap; overflow: hidden;
-  text-overflow: ellipsis; opacity: 0; transition: opacity 0.15s;
+  text-overflow: ellipsis;
 }
-.thumb-card:hover .thumb-name { opacity: 1; }
 
 /* Empty state */
 .empty-state {
@@ -111,7 +110,7 @@ body {
 }
 .lightbox-nav:hover { opacity: 0.8; background: rgba(0,0,0,0.3); }
 .lightbox-nav.left { left: 0; }
-.lightbox-nav.right { right: 0; }
+.lightbox-nav.right { right: 0; transition: right 0.2s ease; }
 .lightbox-close {
   position: absolute; top: 12px; right: 12px; z-index: 10;
   background: rgba(0,0,0,0.5); border: none; color: white;
@@ -124,14 +123,21 @@ body {
   background: rgba(0,0,0,0.6); padding: 4px 14px; border-radius: 12px;
   font-size: 12px; color: #ccc; z-index: 10; pointer-events: none;
 }
-.lightbox-info-btn {
-  position: absolute; top: 12px; right: 56px; z-index: 10;
-  background: rgba(0,0,0,0.5); border: none; color: white;
-  width: 36px; height: 36px; border-radius: 50%; font-size: 16px;
+/* Panel toggle tab on the edge */
+.panel-toggle {
+  position: fixed; top: 50%; z-index: 220;
+  transform: translateY(-50%);
+  width: 24px; height: 64px;
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-right: none; border-radius: 6px 0 0 6px;
   cursor: pointer; display: flex; align-items: center; justify-content: center;
-  font-weight: bold;
+  color: var(--text-dim); font-size: 14px; transition: right 0.2s ease;
+  right: var(--panel-width);
 }
-.lightbox-info-btn:hover { background: rgba(255,255,255,0.15); }
+.panel-toggle:hover { color: var(--text); background: var(--bg-hover); }
+.panel-toggle.collapsed {
+  right: 0; border-right: 1px solid var(--border);
+}
 .lightbox-counter {
   position: absolute; top: 12px; left: 12px; z-index: 10;
   background: rgba(0,0,0,0.6); padding: 4px 10px; border-radius: 10px;
@@ -154,9 +160,10 @@ body {
 .info-value {
   background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
   padding: 10px; font-size: 13px; line-height: 1.5;
+  font-family: "SF Mono", "Fira Code", "JetBrains Mono", "Cascadia Code", Consolas, monospace;
   white-space: pre-wrap; word-break: break-word; position: relative;
 }
-.info-value.prompt { max-height: 200px; overflow-y: auto; }
+.info-value.prompt { min-height: 120px; max-height: 400px; overflow-y: auto; }
 .copy-btn {
   position: absolute; top: 6px; right: 6px;
   background: var(--bg-hover); border: 1px solid var(--border);
@@ -172,7 +179,10 @@ body {
   padding: 8px;
 }
 .info-grid-item .info-label { margin-bottom: 2px; }
-.info-grid-item .info-val { font-size: 13px; }
+.info-grid-item .info-val {
+  font-size: 13px;
+  font-family: "SF Mono", "Fira Code", "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+}
 .info-no-data { color: var(--text-dim); font-style: italic; }
 </style>
 </head>
@@ -199,7 +209,6 @@ body {
 <div class="lightbox" id="lightbox">
   <div class="lightbox-counter" id="lb-counter"></div>
   <button class="lightbox-close" id="lb-close" title="Close (Esc)">&times;</button>
-  <button class="lightbox-info-btn" id="lb-info-btn" title="Toggle info (I)">i</button>
   <div class="lightbox-nav left" id="lb-prev">&#8249;</div>
   <div class="lightbox-img-container" id="lb-img-container">
     <img id="lb-img" src="" alt="">
@@ -209,6 +218,7 @@ body {
 </div>
 
 <!-- Info panel -->
+<div class="panel-toggle" id="panel-toggle" title="Toggle info panel (I)">&#9666;</div>
 <div class="info-panel" id="info-panel">
   <div id="info-content"></div>
 </div>
@@ -249,7 +259,8 @@ async function apiBrowse(path, sort, order) {
 
 async function apiMetadata(path) {
   if (state.metadataCache[path]) return state.metadataCache[path];
-  const res = await fetch(`/api/metadata/${encodeURIComponent(path)}`);
+  const encodedPath = path.split('/').map(encodeURIComponent).join('/');
+  const res = await fetch(`/api/metadata/${encodedPath}`);
   const data = await res.json();
   state.metadataCache[path] = data;
   return data;
@@ -298,7 +309,7 @@ function renderGrid(images) {
   $empty.style.display = 'none';
   $grid.innerHTML = images.map((img, i) =>
     `<div class="thumb-card" onclick="openLightbox(${i})">
-      <img src="/api/thumbnail/${encodeURIComponent(img.path)}" loading="lazy" alt="${img.name}">
+      <img src="/api/thumbnail/${img.path.split('/').map(encodeURIComponent).join('/')}" loading="lazy" alt="${img.name}">
       <div class="thumb-name">${img.name}</div>
     </div>`
   ).join('');
@@ -317,10 +328,19 @@ $sortOrder.addEventListener('click', () => {
 });
 
 // --- Lightbox ---
+const $panelToggle = $('#panel-toggle');
+
 function openLightbox(index) {
   state.index = index;
   state.lightboxOpen = true;
+  state.infoPanelOpen = true;
   $lightbox.classList.add('open');
+  $infoPanel.classList.add('open');
+  $panelToggle.classList.remove('collapsed');
+  $panelToggle.innerHTML = '&#9656;';
+  $panelToggle.style.display = '';
+  $lbImgContainer.style.marginRight = 'var(--panel-width)';
+  $('#lb-next').style.right = 'var(--panel-width)';
   document.body.style.overflow = 'hidden';
   showImage(index);
 }
@@ -330,21 +350,23 @@ function closeLightbox() {
   state.infoPanelOpen = false;
   $lightbox.classList.remove('open');
   $infoPanel.classList.remove('open');
+  $panelToggle.style.display = 'none';
   $lbImgContainer.style.marginRight = '0';
+  $('#lb-next').style.right = '0';
   document.body.style.overflow = '';
 }
 
 function showImage(index) {
   const img = state.images[index];
   if (!img) return;
-  $lbImg.src = `/api/image/${encodeURIComponent(img.path)}`;
+  $lbImg.src = `/api/image/${img.path.split('/').map(encodeURIComponent).join('/')}`;
   $lbFilename.textContent = img.name;
   $lbCounter.textContent = `${index + 1} / ${state.images.length}`;
   state.index = index;
   // Preload neighbors
   preload(index - 1);
   preload(index + 1);
-  // Refresh info panel if open
+  // Refresh info panel
   if (state.infoPanelOpen) loadInfoPanel(img.path);
 }
 
@@ -354,7 +376,7 @@ function preload(index) {
   const img = state.images[wrapped];
   if (img) {
     const pre = new Image();
-    pre.src = `/api/image/${encodeURIComponent(img.path)}`;
+    pre.src = `/api/image/${img.path.split('/').map(encodeURIComponent).join('/')}`;
   }
 }
 
@@ -373,13 +395,18 @@ $('#lb-next').addEventListener('click', () => navigate(1));
 function toggleInfoPanel() {
   state.infoPanelOpen = !state.infoPanelOpen;
   $infoPanel.classList.toggle('open', state.infoPanelOpen);
+  $panelToggle.classList.toggle('collapsed', !state.infoPanelOpen);
+  // Arrow: ▶ to show, ◀ to hide
+  $panelToggle.innerHTML = state.infoPanelOpen ? '&#9656;' : '&#9666;';
   $lbImgContainer.style.marginRight = state.infoPanelOpen ? 'var(--panel-width)' : '0';
+  $('#lb-next').style.right = state.infoPanelOpen ? 'var(--panel-width)' : '0';
   if (state.infoPanelOpen && state.index >= 0) {
     loadInfoPanel(state.images[state.index].path);
   }
 }
 
-$('#lb-info-btn').addEventListener('click', toggleInfoPanel);
+$panelToggle.style.display = 'none';
+$panelToggle.addEventListener('click', toggleInfoPanel);
 
 async function loadInfoPanel(path) {
   $infoContent.innerHTML = '<div class="info-no-data">Loading...</div>';
@@ -420,7 +447,11 @@ function renderInfo(meta) {
   if (meta.denoise != null) html += gridItem('Denoise', meta.denoise);
   if (meta.seed != null) html += gridItem('Seed', meta.seed);
   if (meta.width && meta.height) html += gridItem('Size', `${meta.width} × ${meta.height}`);
+  if (meta.vae) html += gridItem('VAE', meta.vae);
   html += '</div>';
+  if (meta.created) {
+    html += `<div class="info-grid" style="margin-top:8px;grid-template-columns:1fr"><div class="info-grid-item" style="display:flex;align-items:center;gap:8px"><div class="info-label" style="margin:0">Created</div><div class="info-val">${esc(meta.created)}</div></div></div>`;
+  }
 
   // Model full path
   if (meta.model) {

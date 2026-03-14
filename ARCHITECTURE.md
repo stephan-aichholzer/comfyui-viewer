@@ -68,8 +68,19 @@ class MetadataResult:
     seed: Optional[int]
     width: Optional[int]
     height: Optional[int]
+    vae: Optional[str]           # VAE model name (from VAELoader)
+    source_image: Optional[str]  # Input image for img2img workflows
+    created: Optional[str]       # File modification timestamp
     extra: dict                  # Any parser-specific additional fields
 ```
+
+### Common Enrichment
+
+After a parser returns its result, `_enrich_common()` adds cross-parser fields automatically:
+- **created** — file modification timestamp
+- **vae** — from any `VAELoader` node in the workflow
+
+This avoids duplicating logic across parsers.
 
 ### Adding a Parser
 

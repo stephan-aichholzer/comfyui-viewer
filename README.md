@@ -6,10 +6,12 @@ A fast, lightweight web-based image viewer for ComfyUI outputs. Browse folders, 
 
 - **Thumbnail grid** with lazy loading and folder navigation
 - **Fullscreen lightbox** with arrow key navigation and image preloading
-- **Metadata side panel** showing parsed ComfyUI workflow info:
+- **Metadata side panel** (open by default, collapsible via edge tab) showing parsed ComfyUI workflow info:
   - Positive / negative prompts with copy buttons
   - Model name and architecture
   - Sampler, scheduler, steps, CFG, guidance, seed, dimensions
+  - VAE, creation date
+- **Always-visible filenames** on thumbnails
 - **Configurable sorting** by name or date modified (ascending/descending)
 - **Extensible parser system** — add support for new workflow types by dropping in a parser file
 

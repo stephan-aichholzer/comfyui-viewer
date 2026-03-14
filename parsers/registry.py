@@ -4,6 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field, asdict
 from typing import Optional, Callable
 import json
+import os
+from datetime import datetime
 from PIL import Image
 
 
@@ -22,6 +24,9 @@ class MetadataResult:
     seed: Optional[int] = None
     width: Optional[int] = None
     height: Optional[int] = None
+    vae: Optional[str] = None
+    source_image: Optional[str] = None
+    created: Optional[str] = None
     extra: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
@@ -87,12 +92,36 @@ def parse_metadata(filepath: str) -> Optional[dict]:
             if detect_fn(nodes):
                 result = parse_fn(nodes, width, height)
                 if result is not None:
+                    _enrich_common(result, nodes, filepath)
                     return result.to_dict()
         except Exception:
             continue
 
     # Fallback: try generic extraction
-    return _generic_parse(nodes, width, height)
+    result = _generic_parse(nodes, width, height)
+    if result:
+        return result
+    return None
+
+
+def _enrich_common(result: MetadataResult, nodes: dict, filepath: str):
+    """Add common fields that apply across all parsers."""
+    # File creation/modification date
+    try:
+        mtime = os.path.getmtime(filepath)
+        result.created = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        pass
+
+    # VAE (from any VAELoader node)
+    if result.vae is None:
+        for node in nodes.values():
+            if node.get("class_type") == "VAELoader":
+                vae = node.get("inputs", {}).get("vae_name")
+                if vae:
+                    result.vae = vae
+                    break
+
 
 
 def _generic_parse(nodes: dict, width: int, height: int) -> Optional[dict]:
