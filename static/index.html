@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ComfyUI Viewer</title>
+<style>
+:root {
+  --bg: #1a1a1a;
+  --bg-surface: #242424;
+  --bg-hover: #2e2e2e;
+  --border: #3a3a3a;
+  --text: #e0e0e0;
+  --text-dim: #888;
+  --accent: #7c9fd4;
+  --accent-hover: #9ab6e0;
+  --panel-width: 380px;
+  --topbar-height: 48px;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  overflow-x: hidden;
+}
+
+/* Top bar */
+.topbar {
+  position: sticky; top: 0; z-index: 100;
+  height: var(--topbar-height);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center;
+  padding: 0 16px; gap: 12px;
+}
+.breadcrumb { display: flex; align-items: center; gap: 4px; flex: 1; min-width: 0; }
+.breadcrumb a {
+  color: var(--accent); text-decoration: none; cursor: pointer;
+  white-space: nowrap;
+}
+.breadcrumb a:hover { color: var(--accent-hover); }
+.breadcrumb span.sep { color: var(--text-dim); }
+.sort-controls { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.sort-controls select, .sort-controls button {
+  background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  border-radius: 4px; padding: 4px 8px; font-size: 13px; cursor: pointer;
+}
+.sort-controls button:hover { background: var(--bg-hover); }
+
+/* Folder list */
+.folders { display: flex; flex-wrap: wrap; gap: 8px; padding: 16px; }
+.folder-card {
+  background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px;
+  padding: 10px 16px; cursor: pointer; display: flex; align-items: center; gap: 8px;
+  transition: background 0.15s;
+}
+.folder-card:hover { background: var(--bg-hover); }
+.folder-icon { font-size: 18px; opacity: 0.7; }
+
+/* Image grid */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px; padding: 16px;
+}
+.thumb-card {
+  aspect-ratio: 1; border-radius: 6px; overflow: hidden;
+  cursor: pointer; position: relative; background: var(--bg-surface);
+  border: 2px solid transparent; transition: border-color 0.15s;
+}
+.thumb-card:hover { border-color: var(--accent); }
+.thumb-card img {
+  width: 100%; height: 100%; object-fit: cover;
+  transition: opacity 0.2s;
+}
+.thumb-card img[src=""] { opacity: 0; }
+.thumb-name {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  background: rgba(0,0,0,0.7); padding: 4px 6px;
+  font-size: 11px; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; opacity: 0; transition: opacity 0.15s;
+}
+.thumb-card:hover .thumb-name { opacity: 1; }
+
+/* Empty state */
+.empty-state {
+  padding: 60px; text-align: center; color: var(--text-dim); font-size: 16px;
+}
+
+/* Lightbox */
+.lightbox {
+  position: fixed; inset: 0; z-index: 200; background: #111;
+  display: none;
+}
+.lightbox.open { display: flex; }
+.lightbox-img-container {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  overflow: hidden; position: relative;
+  transition: margin-right 0.2s ease;
+}
+.lightbox-img-container img {
+  max-width: 100%; max-height: 100vh; object-fit: contain;
+}
+.lightbox-nav {
+  position: absolute; top: 0; bottom: 0; width: 80px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; opacity: 0; transition: opacity 0.2s;
+  font-size: 36px; color: white; user-select: none; z-index: 10;
+}
+.lightbox-nav:hover { opacity: 0.8; background: rgba(0,0,0,0.3); }
+.lightbox-nav.left { left: 0; }
+.lightbox-nav.right { right: 0; }
+.lightbox-close {
+  position: absolute; top: 12px; right: 12px; z-index: 10;
+  background: rgba(0,0,0,0.5); border: none; color: white;
+  width: 36px; height: 36px; border-radius: 50%; font-size: 20px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+.lightbox-close:hover { background: rgba(255,255,255,0.15); }
+.lightbox-filename {
+  position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+  background: rgba(0,0,0,0.6); padding: 4px 14px; border-radius: 12px;
+  font-size: 12px; color: #ccc; z-index: 10; pointer-events: none;
+}
+.lightbox-info-btn {
+  position: absolute; top: 12px; right: 56px; z-index: 10;
+  background: rgba(0,0,0,0.5); border: none; color: white;
+  width: 36px; height: 36px; border-radius: 50%; font-size: 16px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  font-weight: bold;
+}
+.lightbox-info-btn:hover { background: rgba(255,255,255,0.15); }
+.lightbox-counter {
+  position: absolute; top: 12px; left: 12px; z-index: 10;
+  background: rgba(0,0,0,0.6); padding: 4px 10px; border-radius: 10px;
+  font-size: 12px; color: #aaa;
+}
+
+/* Info panel */
+.info-panel {
+  position: fixed; top: 0; right: 0; bottom: 0; width: var(--panel-width);
+  background: var(--bg-surface); border-left: 1px solid var(--border);
+  z-index: 210; transform: translateX(100%); transition: transform 0.2s ease;
+  overflow-y: auto; padding: 20px;
+}
+.info-panel.open { transform: translateX(0); }
+.info-section { margin-bottom: 20px; }
+.info-label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--text-dim); margin-bottom: 6px;
+}
+.info-value {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+  padding: 10px; font-size: 13px; line-height: 1.5;
+  white-space: pre-wrap; word-break: break-word; position: relative;
+}
+.info-value.prompt { max-height: 200px; overflow-y: auto; }
+.copy-btn {
+  position: absolute; top: 6px; right: 6px;
+  background: var(--bg-hover); border: 1px solid var(--border);
+  color: var(--text-dim); border-radius: 3px; padding: 2px 8px;
+  font-size: 11px; cursor: pointer; transition: color 0.15s;
+}
+.copy-btn:hover { color: var(--text); }
+.info-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+}
+.info-grid-item {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+  padding: 8px;
+}
+.info-grid-item .info-label { margin-bottom: 2px; }
+.info-grid-item .info-val { font-size: 13px; }
+.info-no-data { color: var(--text-dim); font-style: italic; }
+</style>
+</head>
+<body>
+
+<!-- Top bar -->
+<div class="topbar" id="topbar">
+  <div class="breadcrumb" id="breadcrumb"></div>
+  <div class="sort-controls">
+    <select id="sortBy">
+      <option value="modified">Date modified</option>
+      <option value="name">Name</option>
+    </select>
+    <button id="sortOrder" title="Toggle sort order">&#x25BC; Desc</button>
+  </div>
+</div>
+
+<!-- Content -->
+<div id="folders" class="folders"></div>
+<div id="grid" class="grid"></div>
+<div id="empty" class="empty-state" style="display:none">No images in this folder</div>
+
+<!-- Lightbox -->
+<div class="lightbox" id="lightbox">
+  <div class="lightbox-counter" id="lb-counter"></div>
+  <button class="lightbox-close" id="lb-close" title="Close (Esc)">&times;</button>
+  <button class="lightbox-info-btn" id="lb-info-btn" title="Toggle info (I)">i</button>
+  <div class="lightbox-nav left" id="lb-prev">&#8249;</div>
+  <div class="lightbox-img-container" id="lb-img-container">
+    <img id="lb-img" src="" alt="">
+  </div>
+  <div class="lightbox-nav right" id="lb-next">&#8250;</div>
+  <div class="lightbox-filename" id="lb-filename"></div>
+</div>
+
+<!-- Info panel -->
+<div class="info-panel" id="info-panel">
+  <div id="info-content"></div>
+</div>
+
+<script>
+const state = {
+  currentPath: '',
+  images: [],
+  index: -1,
+  sortBy: 'modified',
+  sortOrder: 'desc',
+  lightboxOpen: false,
+  infoPanelOpen: false,
+  metadataCache: {},
+};
+
+const $ = (sel) => document.querySelector(sel);
+const $sortBy = $('#sortBy');
+const $sortOrder = $('#sortOrder');
+const $breadcrumb = $('#breadcrumb');
+const $folders = $('#folders');
+const $grid = $('#grid');
+const $empty = $('#empty');
+const $lightbox = $('#lightbox');
+const $lbImg = $('#lb-img');
+const $lbImgContainer = $('#lb-img-container');
+const $lbFilename = $('#lb-filename');
+const $lbCounter = $('#lb-counter');
+const $infoPanel = $('#info-panel');
+const $infoContent = $('#info-content');
+
+// --- API ---
+async function apiBrowse(path, sort, order) {
+  const params = new URLSearchParams({ path, sort, order });
+  const res = await fetch(`/api/browse?${params}`);
+  return res.json();
+}
+
+async function apiMetadata(path) {
+  if (state.metadataCache[path]) return state.metadataCache[path];
+  const res = await fetch(`/api/metadata/${encodeURIComponent(path)}`);
+  const data = await res.json();
+  state.metadataCache[path] = data;
+  return data;
+}
+
+// --- Grid View ---
+async function loadFolder(path) {
+  state.currentPath = path;
+  state.metadataCache = {};
+  const data = await apiBrowse(path, state.sortBy, state.sortOrder);
+  renderBreadcrumb(data.current_path, data.parent_path);
+  renderFolders(data.folders);
+  renderGrid(data.images);
+  state.images = data.images;
+}
+
+function renderBreadcrumb(current, parent) {
+  let html = '<a onclick="loadFolder(\'\')">Root</a>';
+  if (current) {
+    const parts = current.split(/[/\\]/);
+    let accum = '';
+    for (const part of parts) {
+      accum = accum ? accum + '/' + part : part;
+      html += `<span class="sep">/</span><a onclick="loadFolder('${accum}')">${part}</a>`;
+    }
+  }
+  $breadcrumb.innerHTML = html;
+}
+
+function renderFolders(folders) {
+  if (!folders.length) { $folders.innerHTML = ''; return; }
+  $folders.innerHTML = folders.map(f =>
+    `<div class="folder-card" onclick="loadFolder('${f.path}')">
+      <span class="folder-icon">&#128193;</span>
+      <span>${f.name}</span>
+    </div>`
+  ).join('');
+}
+
+function renderGrid(images) {
+  if (!images.length) {
+    $grid.innerHTML = '';
+    $empty.style.display = 'block';
+    return;
+  }
+  $empty.style.display = 'none';
+  $grid.innerHTML = images.map((img, i) =>
+    `<div class="thumb-card" onclick="openLightbox(${i})">
+      <img src="/api/thumbnail/${encodeURIComponent(img.path)}" loading="lazy" alt="${img.name}">
+      <div class="thumb-name">${img.name}</div>
+    </div>`
+  ).join('');
+}
+
+// --- Sort controls ---
+$sortBy.addEventListener('change', () => {
+  state.sortBy = $sortBy.value;
+  loadFolder(state.currentPath);
+});
+
+$sortOrder.addEventListener('click', () => {
+  state.sortOrder = state.sortOrder === 'desc' ? 'asc' : 'desc';
+  $sortOrder.innerHTML = state.sortOrder === 'desc' ? '&#x25BC; Desc' : '&#x25B2; Asc';
+  loadFolder(state.currentPath);
+});
+
+// --- Lightbox ---
+function openLightbox(index) {
+  state.index = index;
+  state.lightboxOpen = true;
+  $lightbox.classList.add('open');
+  document.body.style.overflow = 'hidden';
+  showImage(index);
+}
+
+function closeLightbox() {
+  state.lightboxOpen = false;
+  state.infoPanelOpen = false;
+  $lightbox.classList.remove('open');
+  $infoPanel.classList.remove('open');
+  $lbImgContainer.style.marginRight = '0';
+  document.body.style.overflow = '';
+}
+
+function showImage(index) {
+  const img = state.images[index];
+  if (!img) return;
+  $lbImg.src = `/api/image/${encodeURIComponent(img.path)}`;
+  $lbFilename.textContent = img.name;
+  $lbCounter.textContent = `${index + 1} / ${state.images.length}`;
+  state.index = index;
+  // Preload neighbors
+  preload(index - 1);
+  preload(index + 1);
+  // Refresh info panel if open
+  if (state.infoPanelOpen) loadInfoPanel(img.path);
+}
+
+function preload(index) {
+  const len = state.images.length;
+  const wrapped = ((index % len) + len) % len;
+  const img = state.images[wrapped];
+  if (img) {
+    const pre = new Image();
+    pre.src = `/api/image/${encodeURIComponent(img.path)}`;
+  }
+}
+
+function navigate(delta) {
+  const len = state.images.length;
+  if (!len) return;
+  const next = ((state.index + delta) % len + len) % len;
+  showImage(next);
+}
+
+$('#lb-close').addEventListener('click', closeLightbox);
+$('#lb-prev').addEventListener('click', () => navigate(-1));
+$('#lb-next').addEventListener('click', () => navigate(1));
+
+// --- Info Panel ---
+function toggleInfoPanel() {
+  state.infoPanelOpen = !state.infoPanelOpen;
+  $infoPanel.classList.toggle('open', state.infoPanelOpen);
+  $lbImgContainer.style.marginRight = state.infoPanelOpen ? 'var(--panel-width)' : '0';
+  if (state.infoPanelOpen && state.index >= 0) {
+    loadInfoPanel(state.images[state.index].path);
+  }
+}
+
+$('#lb-info-btn').addEventListener('click', toggleInfoPanel);
+
+async function loadInfoPanel(path) {
+  $infoContent.innerHTML = '<div class="info-no-data">Loading...</div>';
+  const meta = await apiMetadata(path);
+  if (meta.error) {
+    $infoContent.innerHTML = `<div class="info-no-data">${meta.error}</div>`;
+    return;
+  }
+  renderInfo(meta);
+}
+
+function renderInfo(meta) {
+  let html = '';
+
+  // Positive prompt
+  if (meta.positive_prompt) {
+    html += infoSection('Positive Prompt',
+      `<div class="info-value prompt">${esc(meta.positive_prompt)}<button class="copy-btn" onclick="copyText(this, '${escAttr(meta.positive_prompt)}')">Copy</button></div>`
+    );
+  }
+
+  // Negative prompt
+  if (meta.negative_prompt) {
+    html += infoSection('Negative Prompt',
+      `<div class="info-value prompt">${esc(meta.negative_prompt)}<button class="copy-btn" onclick="copyText(this, '${escAttr(meta.negative_prompt)}')">Copy</button></div>`
+    );
+  }
+
+  // Model & architecture
+  html += '<div class="info-grid">';
+  if (meta.architecture) html += gridItem('Architecture', meta.architecture);
+  if (meta.model) html += gridItem('Model', meta.model.split(/[/\\]/).pop());
+  if (meta.sampler) html += gridItem('Sampler', meta.sampler);
+  if (meta.scheduler) html += gridItem('Scheduler', meta.scheduler);
+  if (meta.steps != null) html += gridItem('Steps', meta.steps);
+  if (meta.cfg != null) html += gridItem('CFG', meta.cfg);
+  if (meta.guidance != null) html += gridItem('Guidance', meta.guidance);
+  if (meta.denoise != null) html += gridItem('Denoise', meta.denoise);
+  if (meta.seed != null) html += gridItem('Seed', meta.seed);
+  if (meta.width && meta.height) html += gridItem('Size', `${meta.width} × ${meta.height}`);
+  html += '</div>';
+
+  // Model full path
+  if (meta.model) {
+    html += infoSection('Model Path',
+      `<div class="info-value">${esc(meta.model)}<button class="copy-btn" onclick="copyText(this, '${escAttr(meta.model)}')">Copy</button></div>`
+    );
+  }
+
+  // Extra fields
+  if (meta.extra && Object.keys(meta.extra).length) {
+    html += '<div class="info-grid" style="margin-top:12px">';
+    for (const [k, v] of Object.entries(meta.extra)) {
+      html += gridItem(k.replace(/_/g, ' '), v);
+    }
+    html += '</div>';
+  }
+
+  $infoContent.innerHTML = html;
+}
+
+function infoSection(label, content) {
+  return `<div class="info-section"><div class="info-label">${label}</div>${content}</div>`;
+}
+
+function gridItem(label, value) {
+  return `<div class="info-grid-item"><div class="info-label">${label}</div><div class="info-val">${esc(String(value))}</div></div>`;
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function escAttr(s) {
+  return s.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n').replace(/\r/g, '');
+}
+
+function copyText(btn, text) {
+  const decoded = text.replace(/\\n/g, '\n').replace(/\\'/g, "'").replace(/\\\\/g, '\\');
+  navigator.clipboard.writeText(decoded).then(() => {
+    btn.textContent = 'Copied!';
+    setTimeout(() => btn.textContent = 'Copy', 1200);
+  });
+}
+
+// --- Keyboard ---
+document.addEventListener('keydown', (e) => {
+  if (!state.lightboxOpen) return;
+  switch (e.key) {
+    case 'ArrowLeft':  e.preventDefault(); navigate(-1); break;
+    case 'ArrowRight': e.preventDefault(); navigate(1); break;
+    case 'Escape':
+      e.preventDefault();
+      if (state.infoPanelOpen) toggleInfoPanel();
+      else closeLightbox();
+      break;
+    case 'i': case 'I':
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') break;
+      e.preventDefault();
+      toggleInfoPanel();
+      break;
+  }
+});
+
+// --- Init ---
+loadFolder('');
+</script>
+</body>
+</html>
