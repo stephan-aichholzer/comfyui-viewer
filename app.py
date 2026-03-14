@@ -1,5 +1,6 @@
 """ComfyUI Image Viewer — FastAPI backend."""
 
+import argparse
 import os
 from pathlib import Path
 
@@ -16,6 +17,15 @@ THUMB_SIZE = (300, 300)
 SUPPORTED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 
 app = FastAPI()
+
+
+def configure(image_root: str | None = None, thumb_dir: str | None = None):
+    """Update BASE_DIR and THUMB_DIR at startup."""
+    global BASE_DIR, THUMB_DIR
+    if image_root:
+        BASE_DIR = Path(image_root).resolve()
+    if thumb_dir:
+        THUMB_DIR = Path(thumb_dir).resolve()
 
 
 def _safe_path(relative: str) -> Path:
@@ -149,4 +159,18 @@ app.mount("/", StaticFiles(directory="static", html=True), name="static")
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8899)
+
+    parser = argparse.ArgumentParser(description="ComfyUI Image Viewer")
+    parser.add_argument("root", nargs="?", default=None,
+                        help="Root directory containing images (default: ./images)")
+    parser.add_argument("--thumbs", default=None,
+                        help="Thumbnail cache directory (default: ./.thumbnails)")
+    parser.add_argument("--host", default="0.0.0.0",
+                        help="Bind address (default: 0.0.0.0)")
+    parser.add_argument("--port", type=int, default=8899,
+                        help="Port (default: 8899)")
+    args = parser.parse_args()
+
+    configure(args.root, args.thumbs)
+    print(f"Serving images from: {BASE_DIR}")
+    uvicorn.run(app, host=args.host, port=args.port)

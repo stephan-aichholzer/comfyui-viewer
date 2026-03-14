@@ -25,25 +25,46 @@ A fast, lightweight web-based image viewer for ComfyUI outputs. Browse folders, 
 
 ## Quick Start
 
+### Run directly
+
 ```bash
 pip install -r requirements.txt
+
+# Default (./images)
 python app.py
+
+# Custom image root
+python app.py /path/to/comfyui/output
+
+# All options
+python app.py /path/to/images --port 9000 --host 127.0.0.1 --thumbs /tmp/thumbs
+```
+
+### Run with Docker
+
+```bash
+docker build -t comfyui-viewer .
+
+# Mount your image folder to /data
+docker run -p 8899:8899 -v /path/to/your/images:/data:ro comfyui-viewer
+
+# With persistent thumbnail cache
+docker run -p 8899:8899 \
+  -v /path/to/your/images:/data:ro \
+  -v /path/to/cache:/app/.thumbnails \
+  comfyui-viewer
 ```
 
 Open [http://localhost:8899](http://localhost:8899) in your browser.
 
 ### Configuration
 
-| Environment Variable | Default | Description |
-|---|---|---|
-| `COMFYUI_IMAGES` | `./images` | Root directory containing your ComfyUI outputs |
-| `COMFYUI_THUMBS` | `./.thumbnails` | Thumbnail cache directory (auto-created) |
-
-Example:
-
-```bash
-COMFYUI_IMAGES=/path/to/comfyui/output python app.py
-```
+| CLI Argument | Env Variable | Default | Description |
+|---|---|---|---|
+| `root` (positional) | `COMFYUI_IMAGES` | `./images` | Root directory containing images |
+| `--thumbs` | `COMFYUI_THUMBS` | `./.thumbnails` | Thumbnail cache directory |
+| `--host` | | `0.0.0.0` | Bind address |
+| `--port` | | `8899` | Port |
 
 ## Keyboard Shortcuts
 

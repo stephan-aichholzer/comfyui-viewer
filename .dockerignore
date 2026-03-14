@@ -1,0 +1,7 @@
+images/
+.thumbnails/
+__pycache__/
+.git/
+.claude/
+*.pyc
+.env
