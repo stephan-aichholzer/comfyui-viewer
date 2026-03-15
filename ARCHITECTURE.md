@@ -12,24 +12,25 @@ comfyui_viewer/
 ├── parsers/                # Metadata parser package
 │   ├── __init__.py         # Auto-imports all parsers
 │   ├── registry.py         # Parser registry + MetadataResult dataclass
-│   ├── flux2.py            # Flux2 workflow parser
-│   └── sdxl_sd.py          # SDXL / SD 1.5 workflow parser
+│   ├── flux2.py            # Flux1/Flux2/ZImage parser (SamplerCustomAdvanced)
+│   └── sdxl_sd.py          # SDXL/SD/Pony parser (KSampler)
 ├── images/                 # Image root (not in repo)
 └── .thumbnails/            # Cached thumbnails (auto-generated)
 ```
 
 ## Backend (`app.py`)
 
-FastAPI application serving four API endpoints and the static frontend.
+FastAPI application serving five API endpoints and the static frontend.
 
 ### API Endpoints
 
 | Endpoint | Purpose |
 |---|---|
 | `GET /api/browse?path=&sort=&order=` | List folders and images in a directory. Returns JSON with `folders`, `images`, `current_path`, and `parent_path`. Uses `os.scandir()` for performance. |
+| `GET /api/tree?path=` | List subfolders for tree sidebar (lazy loading). Returns folder names, paths, and whether each has children (for expand arrows). |
 | `GET /api/thumbnail/{path}` | Serve a thumbnail. Generated on first request using Pillow (300x300 LANCZOS, saved as JPEG quality 85). Cached in `.thumbnails/` mirroring the source directory structure. Regenerated if source file is newer. |
 | `GET /api/image/{path}` | Serve the full-resolution image via `FileResponse`. |
-| `GET /api/metadata/{path}` | Parse ComfyUI metadata from PNG text chunks and return structured JSON. |
+| `GET /api/metadata/{path}` | Parse ComfyUI metadata from PNG text chunks and return structured JSON. For non-ComfyUI images, returns basic file info (dimensions, creation date). |
 
 ### Path Security
 
@@ -47,6 +48,15 @@ The parser package uses a registry pattern with priority-based dispatch.
    - `parse(nodes: dict, width: int, height: int) -> MetadataResult` — extract metadata and return a result
 3. When metadata is requested, `parse_metadata()` opens the PNG, reads the `prompt` text chunk, parses the JSON node dict, and tries each registered parser in priority order (highest first)
 4. If no parser matches, a generic fallback extracts whatever it can
+5. For non-PNG or non-ComfyUI files, the API endpoint returns basic file info (dimensions + timestamp)
+
+### Architecture Detection
+
+Parsers detect the architecture using a two-step approach:
+1. **CLIPLoader/DualCLIPLoader `type` field** — `flux2`, `flux`, `qwen_image`, etc.
+2. **Model name heuristics** — fallback when the CLIP type is ambiguous
+
+This allows a single parser (e.g., `flux2.py`) to correctly identify Flux1, Flux2, and ZImage workflows.
 
 ### MetadataResult
 
@@ -84,31 +94,30 @@ This avoids duplicating logic across parsers.
 
 ### Adding a Parser
 
-Example for a hypothetical "Flux1" workflow:
+Example for a new workflow type:
 
 ```python
-# parsers/flux1.py
+# parsers/my_arch.py
 from .registry import register_parser, MetadataResult
 
-@register_parser(name="flux1", priority=15)
-class Flux1Parser:
+@register_parser(name="my_arch", priority=15)
+class MyArchParser:
 
     @staticmethod
     def can_parse(nodes: dict) -> bool:
-        # Return True if the node graph matches Flux1 patterns
         for node in nodes.values():
-            if node.get("class_type") == "SomeFlux1SpecificNode":
+            if node.get("class_type") == "SomeSpecificNode":
                 return True
         return False
 
     @staticmethod
     def parse(nodes: dict, width: int, height: int) -> MetadataResult:
-        result = MetadataResult(width=width, height=height, architecture="Flux1")
+        result = MetadataResult(width=width, height=height, architecture="MyArch")
         # ... extract fields from nodes ...
         return result
 ```
 
-Then add `from . import flux1` to `parsers/__init__.py`.
+Then add `from . import my_arch` to `parsers/__init__.py`.
 
 ### Priority Guidelines
 
@@ -116,8 +125,8 @@ Higher priority parsers are tried first. Use this when a more specific parser sh
 
 | Priority | Use Case |
 |---|---|
-| 20+ | Specific architectures with unique node types (e.g., Flux2) |
-| 10-19 | Common architectures (e.g., SDXL, SD 1.5) |
+| 20+ | Specific architectures with unique node types (e.g., Flux2, ZImage) |
+| 10-19 | Common architectures (e.g., SDXL, SD 1.5, Pony) |
 | 0-9 | Broad/fallback parsers |
 
 ### ComfyUI Metadata Format
@@ -131,11 +140,18 @@ ComfyUI stores data in PNG text chunks:
 
 Single HTML file with embedded CSS and JS. No build step, no dependencies.
 
-### Views
+### Layout
 
-- **Grid view** — Top bar with breadcrumb navigation and sort controls. Folder cards followed by a CSS Grid of thumbnail cards. Thumbnails use native `loading="lazy"`.
-- **Lightbox** — Fixed overlay. Single `<img>` element swapped on navigation. Preloads previous and next images via `new Image()` for instant arrow-key response.
-- **Info panel** — Fixed 380px panel sliding in from the right. Pushes the lightbox image container left via margin. Fetches metadata on open and caches it client-side.
+- **Top bar** — breadcrumb path navigation + sort controls (field + direction)
+- **Left sidebar** — collapsible folder tree with lazy-loading. Folders expand on click, showing subfolders. Active folder is highlighted. Toggle via edge tab.
+- **Content area** — CSS Grid of thumbnail cards with always-visible filenames
+
+### Lightbox
+
+- Full-viewport overlay with keyboard navigation (left/right arrows, wraps around)
+- Preloads previous and next images via `new Image()` for instant response
+- **Filmstrip** at the bottom showing all images with smooth CSS transform scrolling — current image centered, dynamically adapts to screen width
+- **Info panel** (380px, right side) — open by default, collapsible via edge tab. Shows parsed metadata with copy buttons. Pushes image and filmstrip left when open.
 
 ### State
 

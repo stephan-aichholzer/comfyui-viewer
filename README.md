@@ -1,19 +1,22 @@
 # ComfyUI Viewer
 
-A fast, lightweight web-based image viewer for ComfyUI outputs. Browse folders, view images in a fullscreen lightbox with keyboard navigation, and inspect parsed metadata (prompts, models, parameters) with one-click copy.
+A fast, lightweight web-based image viewer for ComfyUI outputs. Browse folders via a tree sidebar, view images in a fullscreen lightbox with keyboard navigation, and inspect parsed metadata (prompts, models, parameters) with one-click copy. Works with any image format — non-ComfyUI images show basic file info.
 
 ## Features
 
-- **Thumbnail grid** with lazy loading and folder navigation
-- **Fullscreen lightbox** with arrow key navigation and image preloading
+- **Folder tree sidebar** with lazy-loading directory navigation
+- **Thumbnail grid** with lazy loading and always-visible filenames
+- **Fullscreen lightbox** with arrow key navigation, image preloading, and filmstrip
 - **Metadata side panel** (open by default, collapsible via edge tab) showing parsed ComfyUI workflow info:
   - Positive / negative prompts with copy buttons
   - Model name and architecture
   - Sampler, scheduler, steps, CFG, guidance, seed, dimensions
   - VAE, creation date
-- **Always-visible filenames** on thumbnails
+- **Filmstrip** at the bottom of the lightbox with smooth scroll animation
 - **Configurable sorting** by name or date modified (ascending/descending)
+- **Non-ComfyUI image support** — JPEG/WebP files show dimensions and creation date
 - **Extensible parser system** — add support for new workflow types by dropping in a parser file
+- **Privacy-first** — no database, no cookies, no external requests, no data leaves your machine
 
 ## Supported Workflows
 
@@ -73,7 +76,7 @@ Open [http://localhost:8899](http://localhost:8899) in your browser.
 
 | Key | Action |
 |---|---|
-| Left / Right arrow | Previous / next image |
+| Left / Right arrow | Previous / next image (wraps around) |
 | I | Toggle info panel |
 | Escape | Close info panel or lightbox |
 
@@ -81,9 +84,9 @@ Open [http://localhost:8899](http://localhost:8899) in your browser.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for details on the parser system.
 
-1. Create a new file in `parsers/` (e.g., `parsers/flux1.py`)
+1. Create a new file in `parsers/` (e.g., `parsers/my_arch.py`)
 2. Implement a class with `can_parse(nodes)` and `parse(nodes, width, height)` methods
-3. Decorate it with `@register_parser(name="flux1", priority=15)`
+3. Decorate it with `@register_parser(name="my_arch", priority=15)`
 4. Import it in `parsers/__init__.py`
 
 ## Requirements
@@ -92,3 +95,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for details on the parser system.
 - FastAPI
 - Uvicorn
 - Pillow
+
+## License
+
+MIT
