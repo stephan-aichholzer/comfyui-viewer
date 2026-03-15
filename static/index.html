@@ -176,12 +176,17 @@ body {
 }
 .info-grid-item {
   background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
-  padding: 8px;
+  padding: 8px; min-width: 0;
 }
+.info-grid-item.wide { grid-column: 1 / -1; }
 .info-grid-item .info-label { margin-bottom: 2px; }
 .info-grid-item .info-val {
   font-size: 13px;
   font-family: "SF Mono", "Fira Code", "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.info-grid-item .info-val.wrap {
+  word-break: break-all; overflow: visible; text-overflow: unset;
 }
 .info-no-data { color: var(--text-dim); font-style: italic; }
 </style>
@@ -411,10 +416,6 @@ $panelToggle.addEventListener('click', toggleInfoPanel);
 async function loadInfoPanel(path) {
   $infoContent.innerHTML = '<div class="info-no-data">Loading...</div>';
   const meta = await apiMetadata(path);
-  if (meta.error) {
-    $infoContent.innerHTML = `<div class="info-no-data">${meta.error}</div>`;
-    return;
-  }
   renderInfo(meta);
 }
 
@@ -435,38 +436,34 @@ function renderInfo(meta) {
     );
   }
 
-  // Model & architecture
+  // Parameters grid — wide items span full row, short items pair up
   html += '<div class="info-grid">';
   if (meta.architecture) html += gridItem('Architecture', meta.architecture);
-  if (meta.model) html += gridItem('Model', meta.model.split(/[/\\]/).pop());
+  if (meta.width && meta.height) html += gridItem('Size', `${meta.width} × ${meta.height}`);
+  if (meta.model) html += gridItem('Model', meta.model.split(/[/\\]/).pop(), true);
   if (meta.sampler) html += gridItem('Sampler', meta.sampler);
   if (meta.scheduler) html += gridItem('Scheduler', meta.scheduler);
   if (meta.steps != null) html += gridItem('Steps', meta.steps);
   if (meta.cfg != null) html += gridItem('CFG', meta.cfg);
   if (meta.guidance != null) html += gridItem('Guidance', meta.guidance);
   if (meta.denoise != null) html += gridItem('Denoise', meta.denoise);
-  if (meta.seed != null) html += gridItem('Seed', meta.seed);
-  if (meta.width && meta.height) html += gridItem('Size', `${meta.width} × ${meta.height}`);
-  if (meta.vae) html += gridItem('VAE', meta.vae);
-  html += '</div>';
-  if (meta.created) {
-    html += `<div class="info-grid" style="margin-top:8px;grid-template-columns:1fr"><div class="info-grid-item" style="display:flex;align-items:center;gap:8px"><div class="info-label" style="margin:0">Created</div><div class="info-val">${esc(meta.created)}</div></div></div>`;
-  }
+  if (meta.seed != null) html += gridItem('Seed', meta.seed, true);
+  if (meta.vae) html += gridItem('VAE', meta.vae, true);
+  if (meta.created) html += gridItem('Created', meta.created, true);
 
-  // Model full path
+  // Extra fields (clip model, etc.)
+  if (meta.extra) {
+    for (const [k, v] of Object.entries(meta.extra)) {
+      html += gridItem(k.replace(/_/g, ' '), v, true);
+    }
+  }
+  html += '</div>';
+
+  // Model full path (copyable)
   if (meta.model) {
     html += infoSection('Model Path',
       `<div class="info-value">${esc(meta.model)}<button class="copy-btn" onclick="copyText(this, '${escAttr(meta.model)}')">Copy</button></div>`
     );
-  }
-
-  // Extra fields
-  if (meta.extra && Object.keys(meta.extra).length) {
-    html += '<div class="info-grid" style="margin-top:12px">';
-    for (const [k, v] of Object.entries(meta.extra)) {
-      html += gridItem(k.replace(/_/g, ' '), v);
-    }
-    html += '</div>';
   }
 
   $infoContent.innerHTML = html;
@@ -476,8 +473,10 @@ function infoSection(label, content) {
   return `<div class="info-section"><div class="info-label">${label}</div>${content}</div>`;
 }
 
-function gridItem(label, value) {
-  return `<div class="info-grid-item"><div class="info-label">${label}</div><div class="info-val">${esc(String(value))}</div></div>`;
+function gridItem(label, value, wide) {
+  const cls = wide ? 'info-grid-item wide' : 'info-grid-item';
+  const valCls = wide ? 'info-val wrap' : 'info-val';
+  return `<div class="${cls}"><div class="info-label">${label}</div><div class="${valCls}">${esc(String(value))}</div></div>`;
 }
 
 function esc(s) {

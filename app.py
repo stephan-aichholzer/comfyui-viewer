@@ -148,7 +148,23 @@ def metadata(path: str):
 
     result = parse_metadata(str(src))
     if result is None:
-        return JSONResponse({"error": "No ComfyUI metadata found"}, status_code=200)
+        result = {}
+
+    # Always include basic file info
+    if "width" not in result or "height" not in result:
+        try:
+            img = Image.open(src)
+            result["width"] = img.size[0]
+            result["height"] = img.size[1]
+        except Exception:
+            pass
+    if "created" not in result:
+        try:
+            from datetime import datetime
+            mtime = src.stat().st_mtime
+            result["created"] = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            pass
 
     return result
 
