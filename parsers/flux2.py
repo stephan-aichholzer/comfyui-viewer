@@ -1,4 +1,4 @@
-"""Parser for Flux2 workflows using SamplerCustomAdvanced."""
+"""Parser for SamplerCustomAdvanced workflows (Flux1, Flux2, ZImage, etc.)."""
 
 from .registry import register_parser, MetadataResult
 
@@ -19,23 +19,53 @@ def _find_input_value(nodes: dict, class_type: str, field: str):
     return None
 
 
+def _detect_architecture(nodes: dict, model_name: str) -> str:
+    """Detect architecture from CLIP loader type and model name."""
+    # Check CLIPLoader type field
+    for node in nodes.values():
+        ct = node.get("class_type", "")
+        if ct in ("CLIPLoader", "DualCLIPLoader"):
+            clip_type = node.get("inputs", {}).get("type", "")
+            if clip_type == "flux2":
+                return "Flux2"
+            if clip_type == "flux":
+                return "Flux1"
+
+    # Fallback: infer from model name
+    lower = model_name.lower()
+    if "flux2" in lower or "flux-2" in lower:
+        return "Flux2"
+    if "flux1" in lower or "flux-1" in lower or "flux-dev" in lower or "flux-schnell" in lower:
+        return "Flux1"
+    if "z-image" in lower or "zimage" in lower:
+        return "ZImage"
+
+    return "Unknown"
+
+
 @register_parser(name="flux2", priority=20)
-class Flux2Parser:
+class AdvancedSamplerParser:
 
     @staticmethod
     def can_parse(nodes: dict) -> bool:
-        """Detect Flux2 workflows by SamplerCustomAdvanced or CLIPLoader with type=flux2."""
+        """Detect SamplerCustomAdvanced-based workflows."""
         for node in nodes.values():
-            ct = node.get("class_type", "")
-            if ct == "SamplerCustomAdvanced":
-                return True
-            if ct == "CLIPLoader" and node.get("inputs", {}).get("type") == "flux2":
+            if node.get("class_type") == "SamplerCustomAdvanced":
                 return True
         return False
 
     @staticmethod
     def parse(nodes: dict, width: int, height: int) -> MetadataResult | None:
-        result = MetadataResult(width=width, height=height, architecture="Flux2")
+        # Model from UNETLoader
+        model_name = _find_input_value(nodes, "UNETLoader", "unet_name") or ""
+
+        # Detect architecture
+        architecture = _detect_architecture(nodes, model_name)
+
+        result = MetadataResult(width=width, height=height, architecture=architecture)
+
+        if model_name:
+            result.model = model_name
 
         # Prompt from CLIPTextEncode
         clip_encodes = _find_nodes_by_type(nodes, "CLIPTextEncode")
@@ -46,18 +76,8 @@ class Flux2Parser:
                     result.positive_prompt = text
                     break
 
-        # Flux2 doesn't use negative prompts
+        # These workflows don't use negative prompts
         result.negative_prompt = None
-
-        # Model from UNETLoader
-        unet_name = _find_input_value(nodes, "UNETLoader", "unet_name")
-        if unet_name:
-            result.model = unet_name
-        else:
-            # Try DualCLIPLoader or CheckpointLoaderSimple as fallback
-            ckpt_name = _find_input_value(nodes, "CheckpointLoaderSimple", "ckpt_name")
-            if ckpt_name:
-                result.model = ckpt_name
 
         # Sampler from KSamplerSelect
         result.sampler = _find_input_value(nodes, "KSamplerSelect", "sampler_name")
@@ -72,7 +92,7 @@ class Flux2Parser:
         if guidance is not None:
             result.guidance = float(guidance)
 
-        # Steps from BasicScheduler or Flux2Scheduler
+        # Steps from schedulers
         for sched_type in ("Flux2Scheduler", "BasicScheduler"):
             steps = _find_input_value(nodes, sched_type, "steps")
             if steps is not None:
@@ -86,9 +106,19 @@ class Flux2Parser:
                 result.scheduler = sched
                 break
 
+        # Denoise (from BasicScheduler, relevant for img2img)
+        denoise = _find_input_value(nodes, "BasicScheduler", "denoise")
+        if denoise is not None and float(denoise) < 1.0:
+            result.denoise = float(denoise)
+
         # CLIP info
-        clip_name = _find_input_value(nodes, "CLIPLoader", "clip_name")
-        if clip_name:
-            result.extra["clip_model"] = clip_name
+        for loader_type in ("CLIPLoader", "DualCLIPLoader"):
+            matches = _find_nodes_by_type(nodes, loader_type)
+            if matches:
+                inputs = matches[0][1].get("inputs", {})
+                clip_name = inputs.get("clip_name") or inputs.get("clip_name1")
+                if clip_name:
+                    result.extra["clip_model"] = clip_name
+                break
 
         return result

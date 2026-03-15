@@ -19,7 +19,10 @@ A fast, lightweight web-based image viewer for ComfyUI outputs. Browse folders, 
 
 | Architecture | Node Pattern | Status |
 |---|---|---|
-| Flux2 | SamplerCustomAdvanced + KSamplerSelect | Supported |
+| Flux2 | SamplerCustomAdvanced + CLIPLoader(flux2) | Supported |
+| Flux1 | SamplerCustomAdvanced + DualCLIPLoader(flux) | Supported |
+| ZImage | SamplerCustomAdvanced + CLIPLoader(qwen_image) | Supported |
+| Pony | KSampler + UNETLoader + CLIPLoader(qwen_image) | Supported |
 | SDXL / SD 1.5 | KSampler + CheckpointLoaderSimple | Supported |
 | Generic fallback | Any CLIPTextEncode + CheckpointLoader | Basic support |
 

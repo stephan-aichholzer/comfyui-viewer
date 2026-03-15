@@ -1,4 +1,4 @@
-"""Parser for SDXL and SD1.5 workflows using KSampler + CheckpointLoaderSimple."""
+"""Parser for KSampler-based workflows (SDXL, SD1.5, Pony, etc.)."""
 
 from .registry import register_parser, MetadataResult
 
@@ -40,16 +40,29 @@ def _get_prompt_text(nodes: dict, node_id: str, input_name: str) -> str | None:
     return None
 
 
-def _infer_architecture(model_name: str) -> str:
-    """Infer architecture from model filename."""
+def _infer_architecture(nodes: dict, model_name: str) -> str:
+    """Infer architecture from CLIPLoader type, then model filename."""
+    # Check CLIPLoader type field first
+    for node in nodes.values():
+        ct = node.get("class_type", "")
+        if ct in ("CLIPLoader", "DualCLIPLoader"):
+            clip_type = node.get("inputs", {}).get("type", "")
+            if clip_type == "qwen_image":
+                # Could be Pony v7 or similar next-gen model
+                lower = model_name.lower()
+                if "pony" in lower:
+                    return "Pony"
+                return "SDXL (Next-gen)"
+
     lower = model_name.lower()
+    if "pony" in lower:
+        return "Pony"
     if "sdxl" in lower or "sd_xl" in lower:
         return "SDXL"
     if "sd3" in lower:
         return "SD3"
     if "sd1" in lower or "v1-5" in lower or "v1_5" in lower:
         return "SD 1.5"
-    # Default to SDXL for this parser since it uses KSampler
     return "SD / SDXL"
 
 
@@ -105,12 +118,18 @@ class SDXLParser:
         if result.negative_prompt is not None and result.negative_prompt.strip() == "":
             result.negative_prompt = "(empty)"
 
-        # Find model
+        # Find model — try CheckpointLoaderSimple first, then UNETLoader
+        model_name = ""
         checkpoints = _find_nodes_by_type(nodes, "CheckpointLoaderSimple")
         if checkpoints:
-            _, ckpt_node = checkpoints[0]
-            model_name = ckpt_node.get("inputs", {}).get("ckpt_name", "")
+            model_name = checkpoints[0][1].get("inputs", {}).get("ckpt_name", "")
+        else:
+            unet_loaders = _find_nodes_by_type(nodes, "UNETLoader")
+            if unet_loaders:
+                model_name = unet_loaders[0][1].get("inputs", {}).get("unet_name", "")
+
+        if model_name:
             result.model = model_name
-            result.architecture = _infer_architecture(model_name)
+        result.architecture = _infer_architecture(nodes, model_name)
 
         return result
