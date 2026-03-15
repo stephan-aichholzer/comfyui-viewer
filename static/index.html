@@ -15,6 +15,7 @@
   --accent: #7c9fd4;
   --accent-hover: #9ab6e0;
   --panel-width: 380px;
+  --tree-width: 240px;
   --topbar-height: 48px;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -49,16 +50,6 @@ body {
 }
 .sort-controls button:hover { background: var(--bg-hover); }
 
-/* Folder list */
-.folders { display: flex; flex-wrap: wrap; gap: 8px; padding: 16px; }
-.folder-card {
-  background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px;
-  padding: 10px 16px; cursor: pointer; display: flex; align-items: center; gap: 8px;
-  transition: background 0.15s;
-}
-.folder-card:hover { background: var(--bg-hover); }
-.folder-icon { font-size: 18px; opacity: 0.7; }
-
 /* Image grid */
 .grid {
   display: grid;
@@ -82,6 +73,56 @@ body {
   font-size: 11px; white-space: nowrap; overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* Layout wrapper */
+.main-layout {
+  display: flex; min-height: calc(100vh - var(--topbar-height));
+}
+
+/* Tree sidebar */
+.tree-sidebar {
+  width: var(--tree-width); flex-shrink: 0;
+  background: var(--bg-surface); border-right: 1px solid var(--border);
+  overflow-y: auto; overflow-x: hidden;
+  padding: 8px 0; font-size: 13px;
+  transition: width 0.2s ease, padding 0.2s ease;
+}
+.tree-sidebar.collapsed { width: 0; padding: 0; border-right: none; }
+.tree-toggle {
+  position: fixed; top: var(--topbar-height); left: 0; z-index: 101;
+  width: 24px; height: 48px;
+  background: var(--bg-surface); border: 1px solid var(--border);
+  border-left: none; border-radius: 0 6px 6px 0;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  color: var(--text-dim); font-size: 14px;
+  transition: left 0.2s ease;
+  left: var(--tree-width);
+}
+.tree-toggle:hover { color: var(--text); background: var(--bg-hover); }
+.tree-toggle.collapsed { left: 0; }
+.tree-node { user-select: none; }
+.tree-item {
+  display: flex; align-items: center; gap: 4px;
+  padding: 4px 8px; cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  border-left: 3px solid transparent;
+  transition: background 0.1s;
+}
+.tree-item:hover { background: var(--bg-hover); }
+.tree-item.active { background: var(--bg-hover); border-left-color: var(--accent); color: var(--accent); }
+.tree-arrow {
+  width: 16px; text-align: center; font-size: 10px; color: var(--text-dim);
+  flex-shrink: 0; transition: transform 0.15s;
+}
+.tree-arrow.expanded { transform: rotate(90deg); }
+.tree-arrow.empty { visibility: hidden; }
+.tree-icon { flex-shrink: 0; opacity: 0.6; font-size: 14px; }
+.tree-name { overflow: hidden; text-overflow: ellipsis; }
+.tree-children { display: none; }
+.tree-children.open { display: block; }
+
+/* Main content area */
+.content-area { flex: 1; min-width: 0; }
 
 /* Empty state */
 .empty-state {
@@ -225,10 +266,24 @@ body {
   </div>
 </div>
 
-<!-- Content -->
-<div id="folders" class="folders"></div>
-<div id="grid" class="grid"></div>
-<div id="empty" class="empty-state" style="display:none">No images in this folder</div>
+<!-- Main layout -->
+<div class="main-layout">
+  <div class="tree-sidebar" id="tree-sidebar">
+    <div class="tree-node">
+      <div class="tree-item active" data-path="" onclick="treeSelect('')">
+        <span class="tree-arrow expanded">&#9654;</span>
+        <span class="tree-icon">&#128193;</span>
+        <span class="tree-name">Root</span>
+      </div>
+      <div class="tree-children open" id="tree-root"></div>
+    </div>
+  </div>
+  <div class="content-area">
+    <div id="grid" class="grid"></div>
+    <div id="empty" class="empty-state" style="display:none">No images in this folder</div>
+  </div>
+</div>
+<div class="tree-toggle" id="tree-toggle" title="Toggle folder tree">&#9666;</div>
 
 <!-- Lightbox -->
 <div class="lightbox" id="lightbox">
@@ -265,7 +320,6 @@ const $ = (sel) => document.querySelector(sel);
 const $sortBy = $('#sortBy');
 const $sortOrder = $('#sortOrder');
 const $breadcrumb = $('#breadcrumb');
-const $folders = $('#folders');
 const $grid = $('#grid');
 const $empty = $('#empty');
 const $lightbox = $('#lightbox');
@@ -293,38 +347,93 @@ async function apiMetadata(path) {
   return data;
 }
 
+// --- Tree Sidebar ---
+const $treeSidebar = $('#tree-sidebar');
+const $treeToggle = $('#tree-toggle');
+const $treeRoot = $('#tree-root');
+let treeOpen = true;
+
+$treeToggle.addEventListener('click', () => {
+  treeOpen = !treeOpen;
+  $treeSidebar.classList.toggle('collapsed', !treeOpen);
+  $treeToggle.classList.toggle('collapsed', !treeOpen);
+  $treeToggle.innerHTML = treeOpen ? '&#9666;' : '&#9656;';
+});
+
+async function apiTree(path) {
+  const params = new URLSearchParams({ path });
+  const res = await fetch(`/api/tree?${params}`);
+  return res.json();
+}
+
+async function loadTreeChildren(parentEl, path) {
+  if (parentEl.dataset.loaded) return;
+  parentEl.dataset.loaded = '1';
+  const data = await apiTree(path);
+  let html = '';
+  for (const f of data.folders) {
+    const arrowCls = f.has_children ? 'tree-arrow' : 'tree-arrow empty';
+    html += `<div class="tree-node">
+      <div class="tree-item" data-path="${f.path}" onclick="treeSelect('${f.path}', this)" style="padding-left:${getDepth(f.path) * 16 + 8}px">
+        <span class="${arrowCls}" onclick="event.stopPropagation();treeToggleExpand(this, '${f.path}')">&#9654;</span>
+        <span class="tree-icon">&#128193;</span>
+        <span class="tree-name">${f.name}</span>
+      </div>
+      <div class="tree-children"></div>
+    </div>`;
+  }
+  parentEl.innerHTML = html;
+}
+
+function getDepth(path) {
+  if (!path) return 0;
+  return path.split('/').length;
+}
+
+async function treeToggleExpand(arrowEl, path) {
+  const node = arrowEl.closest('.tree-node');
+  const children = node.querySelector('.tree-children');
+  const isOpen = children.classList.contains('open');
+  if (isOpen) {
+    children.classList.remove('open');
+    arrowEl.classList.remove('expanded');
+  } else {
+    await loadTreeChildren(children, path);
+    children.classList.add('open');
+    arrowEl.classList.add('expanded');
+  }
+}
+
+function treeSelect(path) {
+  // Update active state in tree
+  const prev = $treeSidebar.querySelector('.tree-item.active');
+  if (prev) prev.classList.remove('active');
+  const item = $treeSidebar.querySelector(`.tree-item[data-path="${path}"]`);
+  if (item) item.classList.add('active');
+  loadFolder(path);
+}
+
 // --- Grid View ---
 async function loadFolder(path) {
   state.currentPath = path;
   state.metadataCache = {};
   const data = await apiBrowse(path, state.sortBy, state.sortOrder);
-  renderBreadcrumb(data.current_path, data.parent_path);
-  renderFolders(data.folders);
+  renderBreadcrumb(data.current_path);
   renderGrid(data.images);
   state.images = data.images;
 }
 
-function renderBreadcrumb(current, parent) {
-  let html = '<a onclick="loadFolder(\'\')">Root</a>';
+function renderBreadcrumb(current) {
+  let html = '<a onclick="treeSelect(\'\')">Root</a>';
   if (current) {
     const parts = current.split(/[/\\]/);
     let accum = '';
     for (const part of parts) {
       accum = accum ? accum + '/' + part : part;
-      html += `<span class="sep">/</span><a onclick="loadFolder('${accum}')">${part}</a>`;
+      html += `<span class="sep">/</span><a onclick="treeSelect('${accum}')">${part}</a>`;
     }
   }
   $breadcrumb.innerHTML = html;
-}
-
-function renderFolders(folders) {
-  if (!folders.length) { $folders.innerHTML = ''; return; }
-  $folders.innerHTML = folders.map(f =>
-    `<div class="folder-card" onclick="loadFolder('${f.path}')">
-      <span class="folder-icon">&#128193;</span>
-      <span>${f.name}</span>
-    </div>`
-  ).join('');
 }
 
 function renderGrid(images) {
@@ -582,6 +691,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 // --- Init ---
+loadTreeChildren($treeRoot, '');
 loadFolder('');
 </script>
 </body>

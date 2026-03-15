@@ -97,6 +97,41 @@ def browse(
     }
 
 
+@app.get("/api/tree")
+def tree(path: str = ""):
+    """List subfolders for tree navigation (lazy loading)."""
+    dir_path = _safe_path(path)
+    if not dir_path.is_dir():
+        raise HTTPException(status_code=404, detail="Directory not found")
+
+    folders = []
+    try:
+        for entry in os.scandir(dir_path):
+            if entry.name.startswith("."):
+                continue
+            if entry.is_dir(follow_symlinks=False):
+                rel = os.path.relpath(entry.path, BASE_DIR)
+                # Check if this folder has subfolders (for expand arrow)
+                has_children = False
+                try:
+                    for sub in os.scandir(entry.path):
+                        if not sub.name.startswith(".") and sub.is_dir(follow_symlinks=False):
+                            has_children = True
+                            break
+                except PermissionError:
+                    pass
+                folders.append({
+                    "name": entry.name,
+                    "path": rel,
+                    "has_children": has_children,
+                })
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    folders.sort(key=lambda f: f["name"].lower())
+    return {"path": path, "folders": folders}
+
+
 @app.get("/api/thumbnail/{path:path}")
 def thumbnail(path: str):
     """Serve a cached thumbnail, generating if needed."""
