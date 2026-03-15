@@ -100,7 +100,7 @@ body {
   transition: margin-right 0.2s ease;
 }
 .lightbox-img-container img {
-  max-width: 100%; max-height: 100vh; object-fit: contain;
+  max-width: 100%; max-height: calc(100vh - 80px); object-fit: contain;
 }
 .lightbox-nav {
   position: absolute; top: 0; bottom: 0; width: 80px;
@@ -119,10 +119,30 @@ body {
 }
 .lightbox-close:hover { background: rgba(255,255,255,0.15); }
 .lightbox-filename {
-  position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%);
+  position: absolute; bottom: 92px; left: 50%; transform: translateX(-50%);
   background: rgba(0,0,0,0.6); padding: 4px 14px; border-radius: 12px;
   font-size: 12px; color: #ccc; z-index: 10; pointer-events: none;
+  transition: margin-right 0.2s ease;
 }
+/* Filmstrip */
+.filmstrip {
+  position: absolute; bottom: 0; left: 0; right: 0; z-index: 10;
+  height: 80px; background: rgba(0,0,0,0.7);
+  overflow: hidden;
+  transition: margin-right 0.2s ease;
+}
+.filmstrip-track {
+  display: flex; align-items: center; justify-content: center;
+  gap: 6px; height: 100%; padding: 8px;
+  transition: transform 0.3s ease;
+}
+.filmstrip-thumb {
+  height: 64px; width: 64px; object-fit: cover; border-radius: 4px;
+  cursor: pointer; opacity: 0.5; transition: opacity 0.15s, border-color 0.15s;
+  border: 2px solid transparent; flex-shrink: 0;
+}
+.filmstrip-thumb:hover { opacity: 0.8; }
+.filmstrip-thumb.active { opacity: 1; border-color: var(--accent); }
 /* Panel toggle tab on the edge */
 .panel-toggle {
   position: fixed; top: 50%; z-index: 220;
@@ -220,6 +240,7 @@ body {
   </div>
   <div class="lightbox-nav right" id="lb-next">&#8250;</div>
   <div class="lightbox-filename" id="lb-filename"></div>
+  <div class="filmstrip" id="filmstrip"><div class="filmstrip-track" id="filmstrip-track"></div></div>
 </div>
 
 <!-- Info panel -->
@@ -254,6 +275,7 @@ const $lbFilename = $('#lb-filename');
 const $lbCounter = $('#lb-counter');
 const $infoPanel = $('#info-panel');
 const $infoContent = $('#info-content');
+const $filmstrip = $('#filmstrip');
 
 // --- API ---
 async function apiBrowse(path, sort, order) {
@@ -346,7 +368,10 @@ function openLightbox(index) {
   $panelToggle.style.display = '';
   $lbImgContainer.style.marginRight = 'var(--panel-width)';
   $('#lb-next').style.right = 'var(--panel-width)';
+  $filmstrip.style.marginRight = 'var(--panel-width)';
+  $lbFilename.style.marginRight = 'var(--panel-width)';
   document.body.style.overflow = 'hidden';
+  buildFilmstrip();
   showImage(index);
 }
 
@@ -358,6 +383,8 @@ function closeLightbox() {
   $panelToggle.style.display = 'none';
   $lbImgContainer.style.marginRight = '0';
   $('#lb-next').style.right = '0';
+  $filmstrip.style.marginRight = '0';
+  $lbFilename.style.marginRight = '0';
   document.body.style.overflow = '';
 }
 
@@ -368,6 +395,7 @@ function showImage(index) {
   $lbFilename.textContent = img.name;
   $lbCounter.textContent = `${index + 1} / ${state.images.length}`;
   state.index = index;
+  updateFilmstrip(index);
   // Preload neighbors
   preload(index - 1);
   preload(index + 1);
@@ -396,6 +424,40 @@ $('#lb-close').addEventListener('click', closeLightbox);
 $('#lb-prev').addEventListener('click', () => navigate(-1));
 $('#lb-next').addEventListener('click', () => navigate(1));
 
+// --- Filmstrip ---
+const THUMB_W = 70; // 64px + 6px gap
+const $filmstripTrack = $('#filmstrip-track');
+
+function buildFilmstrip() {
+  const len = state.images.length;
+  let html = '';
+  for (let i = 0; i < len; i++) {
+    const img = state.images[i];
+    const thumbUrl = `/api/thumbnail/${img.path.split('/').map(encodeURIComponent).join('/')}`;
+    html += `<img class="filmstrip-thumb" data-index="${i}" src="${thumbUrl}" onclick="showImage(${i})" title="${img.name}">`;
+  }
+  $filmstripTrack.innerHTML = html;
+}
+
+function updateFilmstrip(index) {
+  // Update active class
+  const prev = $filmstripTrack.querySelector('.active');
+  if (prev) prev.classList.remove('active');
+  const cur = $filmstripTrack.querySelector(`[data-index="${index}"]`);
+  if (cur) cur.classList.add('active');
+
+  // Calculate scroll to center the active thumb
+  const panelOffset = state.infoPanelOpen ? 380 : 0;
+  const stripWidth = $filmstrip.offsetWidth - panelOffset;
+  const centerOffset = stripWidth / 2;
+  const totalWidth = state.images.length * THUMB_W;
+  const thumbCenter = index * THUMB_W + THUMB_W / 2;
+  const shift = centerOffset - thumbCenter;
+
+  $filmstripTrack.style.transform = `translateX(${shift}px)`;
+  $filmstripTrack.style.justifyContent = 'flex-start';
+}
+
 // --- Info Panel ---
 function toggleInfoPanel() {
   state.infoPanelOpen = !state.infoPanelOpen;
@@ -403,8 +465,11 @@ function toggleInfoPanel() {
   $panelToggle.classList.toggle('collapsed', !state.infoPanelOpen);
   // Arrow: ▶ to show, ◀ to hide
   $panelToggle.innerHTML = state.infoPanelOpen ? '&#9656;' : '&#9666;';
-  $lbImgContainer.style.marginRight = state.infoPanelOpen ? 'var(--panel-width)' : '0';
-  $('#lb-next').style.right = state.infoPanelOpen ? 'var(--panel-width)' : '0';
+  const mr = state.infoPanelOpen ? 'var(--panel-width)' : '0';
+  $lbImgContainer.style.marginRight = mr;
+  $('#lb-next').style.right = mr;
+  $filmstrip.style.marginRight = mr;
+  $lbFilename.style.marginRight = mr;
   if (state.infoPanelOpen && state.index >= 0) {
     loadInfoPanel(state.images[state.index].path);
   }
